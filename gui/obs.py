@@ -150,24 +150,91 @@ class OBSPanel:
             pid = process_manager.find_process_by_name(target_process)
             
             if pid:
-                # 获取最活跃的线程
-                active_thread = process_manager.get_most_active_thread(pid)
-                if active_thread:
-                    # 挂起该线程
-                    if process_manager.suspend_thread(active_thread.id):
-                        self.logger.info("已挂起最活跃线程，请确认重连问题是否已解决")
+                # 获取进程的所有线程
+                try:
+                    process = psutil.Process(pid)
+                    threads = process.threads()
+                    
+                    if not threads:
+                        self.logger.error("未找到任何线程")
+                        return
+                    
+                    # 挂起多个最活跃的线程（前3个最活跃的线程）
+                    # 根据线程时间排序
+                    sorted_threads = sorted(threads, 
+                                           key=lambda t: t.system_time + t.user_time, 
+                                           reverse=True)
+                    
+                    # 挂起前3个最活跃的线程
+                    suspended_count = 0
+                    for i, thread in enumerate(sorted_threads[:3]):
+                        if process_manager.suspend_thread(thread.id):
+                            suspended_count += 1
+                            self.logger.info(f"已挂起线程 #{i+1} (ID: {thread.id})")
+                        else:
+                            self.logger.error(f"挂起线程 #{i+1} (ID: {thread.id}) 失败")
+                    
+                    if suspended_count > 0:
+                        self.logger.info(f"成功挂起 {suspended_count} 个活跃线程")
+                        # 显示成功消息给用户
+                        messagebox.showinfo("操作成功", f"已成功挂起 {suspended_count} 个MediaSDK_Server.exe进程的活跃线程，重连问题应该已解决。")
                     else:
-                        self.logger.error("挂起线程失败")
+                        self.logger.error("未能挂起任何线程")
+                        messagebox.showerror("操作失败", "未能挂起任何线程，请尝试以管理员身份运行程序。")
+                        
+                except psutil.NoSuchProcess:
+                    self.logger.error(f"进程 {target_process} 已不存在")
+                    messagebox.showerror("操作失败", f"进程 {target_process} 已不存在，请先启动直播伴侣。")
+                except psutil.AccessDenied:
+                    self.logger.error("没有足够权限访问进程线程")
+                    messagebox.showerror("权限不足", "没有足够权限访问进程线程，请以管理员身份运行程序。")
+            else:
+                self.logger.error(f"未找到 {target_process} 进程")
+                messagebox.showerror("操作失败", f"未找到 {target_process} 进程，请先启动直播伴侣。")
+                
         except Exception as e:
-            self.logger.error(f"处理重连失败: {str(e)}")
+            error_msg = f"处理重连失败: {str(e)}"
+            self.logger.error(error_msg)
+            messagebox.showerror("操作失败", error_msg)
         
-        self.logger.info("处理重连问题结束，如果问题仍然存在，请尝试重启OBS和直播伴侣后重试")
+        self.logger.info("处理重连问题结束")
         
     def kill_media_sdk_server(self):
+        """清除一键解决重连状态，恢复线程并终止进程"""
         self.logger.info("正在清除一键解决重连...")
-        process_manager = ProcessThreadManager()
-        process_manager.kill_process_by_name("MediaSDK_Server.exe")
-        self.logger.info("一键解决重连状态已清除")
+        
+        try:
+            # 创建进程管理器实例
+            process_manager = ProcessThreadManager()
+            process_manager.logger = self.logger
+            
+            # 先恢复所有可能被挂起的线程
+            resumed_threads = process_manager.resume_all_suspended_threads()
+            if resumed_threads:
+                self.logger.info(f"已恢复 {len(resumed_threads)} 个被挂起的线程")
+            else:
+                self.logger.info("没有发现被挂起的线程")
+            
+            # 终止进程
+            killed_pids = process_manager.kill_process_safely(process_name="MediaSDK_Server.exe")
+            
+            if killed_pids:
+                self.logger.info(f"已成功终止 {len(killed_pids)} 个MediaSDK_Server.exe进程")
+                messagebox.showinfo("操作成功", "一键解决重连状态已清除，MediaSDK_Server.exe进程已终止。")
+            else:
+                self.logger.info("未找到或未能终止MediaSDK_Server.exe进程")
+                messagebox.showinfo("提示", "未找到MediaSDK_Server.exe进程，可能已经被终止。")
+                
+        except psutil.AccessDenied:
+            error_msg = "权限不足，无法终止进程，请以管理员身份运行程序"
+            self.logger.error(error_msg)
+            messagebox.showerror("权限不足", error_msg)
+        except Exception as e:
+            error_msg = f"清除重连状态时发生错误: {str(e)}"
+            self.logger.error(error_msg)
+            messagebox.showerror("操作失败", error_msg)
+        
+        self.logger.info("清除一键解决重连操作完成")
 
 
     def show_obs_help(self):

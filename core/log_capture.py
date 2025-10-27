@@ -97,25 +97,43 @@ class LogCapture:
     def _parse_stream_info(self, content):
         """解析推流地址和推流码"""
         try:
-            # 优化正则表达式，使用更精确的匹配
-            success_pattern = re.compile(r'\[startStream\]success', re.MULTILINE)
+            # 优化正则表达式，使用更精确和灵活的匹配
+            # 增加多个可能的成功标志匹配
+            success_pattern = re.compile(r'(\[startStream\]success|streaming started|推流成功)', re.MULTILINE | re.IGNORECASE)
             
             # 先快速检查是否包含成功标志，避免不必要的复杂匹配
             if success_pattern.search(content):
-                # 一次编译多个正则表达式
+                # 一次编译多个正则表达式，增加容错性
                 url_pattern = re.compile(r'"url":"([^"]+)"')
+                # 增加备选匹配模式，适应可能的格式变化
+                url_pattern_alt = re.compile(r'url=["\']?([^"\'\s]+)["\']?')
                 key_pattern = re.compile(r'"key":"([^"]+)"')
+                # 增加备选匹配模式，适应可能的格式变化
+                key_pattern_alt = re.compile(r'key=["\']?([^"\'\s]+)["\']?')
                 timestamp_pattern = re.compile(r'"timestamp":"([^"]+)"')
+                timestamp_pattern_alt = re.compile(r'timestamp=([^\s&]+)')
     
-                # 提取信息
+                # 提取信息，尝试多种匹配模式
                 url_match = url_pattern.search(content)
+                if not url_match:
+                    url_match = url_pattern_alt.search(content)
+                    
                 key_match = key_pattern.search(content)
+                if not key_match:
+                    key_match = key_pattern_alt.search(content)
+                    
                 timestamp_match = timestamp_pattern.search(content)
+                if not timestamp_match:
+                    timestamp_match = timestamp_pattern_alt.search(content)
                     
                 if url_match and key_match and timestamp_match:
                     url = url_match.group(1)
                     key = key_match.group(1)
                     timestamp = timestamp_match.group(1)
+                    
+                    # 清理提取的信息，去除可能的转义字符
+                    url = url.replace('\\', '')
+                    key = key.replace('\\', '')
                     
                     # 检查时间戳有效性
                     try:
