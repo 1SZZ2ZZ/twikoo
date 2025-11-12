@@ -47,8 +47,13 @@ function pop(imageURL) {
     if (modalContent) {
         modalContent.parentNode.removeChild(modalContent);
     }
-    // 显示图片元素
+    // 显示图片元素并设置最大尺寸
     tcMainElement.style.display = 'block';
+    tcMainElement.style.maxWidth = '400px';
+    tcMainElement.style.maxHeight = '500px';
+    tcMainElement.style.width = 'auto';
+    tcMainElement.style.height = 'auto';
+    tcMainElement.style.objectFit = 'contain';
     if (imageURL) {
         tcMainElement.src = imageURL;
     }
